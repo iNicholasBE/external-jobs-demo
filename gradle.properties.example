@@ -1,0 +1,5 @@
+org.gradle.jvmargs=-Xmx2048M -Dfile.encoding=UTF-8 --add-opens=java.base/java.io=ALL-UNNAMED
+
+# JobRunr Pro Maven credentials — replace with your own
+mavenUser=your-username
+mavenPass=your-password

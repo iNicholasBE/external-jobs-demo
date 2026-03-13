@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobRunr Pro — External Jobs Demo</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        body { display: flex; align-items: center; justify-content: center; }
+        .hero { text-align: center; max-width: 600px; }
+        .hero h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .hero p { color: #6b7280; margin-bottom: 2rem; line-height: 1.6; }
+        .cards { display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+        .demo-card {
+            background: #fff; border-radius: 12px; padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            width: 260px; text-align: left;
+            text-decoration: none; color: inherit;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .demo-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .demo-card .icon { font-size: 2rem; margin-bottom: 0.75rem; }
+        .demo-card h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .demo-card p { color: #6b7280; font-size: 0.85rem; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="hero">
+    <h1>External Jobs Demo</h1>
+    <p>
+        Two scenarios showcasing <strong>JobRunr Pro 8.5 External Jobs</strong> —
+        jobs that are triggered by JobRunr but completed by an external system or a human.
+    </p>
+    <div class="cards">
+        <a href="/gpu" class="demo-card">
+            <div class="icon">🎬</div>
+            <h2>GPU Video Generation</h2>
+            <p>Submit a text prompt. A real GPU on Replicate generates a video. JobRunr tracks it as an External Job.</p>
+        </a>
+        <a href="/approvals" class="demo-card">
+            <div class="icon">🤖</div>
+            <h2>AI Content Approval</h2>
+            <p>AI generates marketing copy. A human reviewer approves or declines. The decision signals the External Job.</p>
+        </a>
+    </div>
+</div>
+</body>
+</html>
