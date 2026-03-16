@@ -1,8 +1,8 @@
-# JobRunr Pro — External Jobs Demo
+# JobRunr Pro: External Jobs Demo
 
-A Spring Boot demo showcasing **[External Jobs](https://www.jobrunr.io/en/documentation/pro/external-jobs/)** in JobRunr Pro 8.5 — jobs that are triggered by JobRunr but completed by an external system or a human decision.
+A Spring Boot demo showcasing **[External Jobs](https://www.jobrunr.io/en/documentation/pro/external-jobs/)** in JobRunr Pro 8.5. External Jobs are jobs that are triggered by JobRunr but completed by an external system or a human decision.
 
-> **Learn more:** [External Jobs Guide](https://www.jobrunr.io/en/guides/advanced/external-jobs/) — a step-by-step walkthrough of the External Jobs API.
+> **Learn more:** [External Jobs Guide](https://www.jobrunr.io/en/guides/advanced/external-jobs/), a step-by-step walkthrough of the External Jobs API.
 
 ## Scenarios
 
@@ -11,7 +11,7 @@ A Spring Boot demo showcasing **[External Jobs](https://www.jobrunr.io/en/docume
 | **GPU Video Generation** | A text prompt is sent to [Replicate](https://replicate.com) which runs `lightricks/ltx-2.3-fast` on a real GPU. JobRunr tracks the long-running prediction as an External Job. A poller detects completion and signals the job. |
 | **AI Content Approval** | AI generates marketing copy with a confidence score. The job enters PROCESSED state and waits for a human to approve or decline. The decision signals the External Job as succeeded or failed. |
 
-Both scenarios use **priority queues** — GPU and approval jobs are enqueued on the `high-prio` queue.
+Both scenarios use **priority queues**. GPU and approval jobs are enqueued on the `high-prio` queue.
 
 ## Tech Stack
 
@@ -48,8 +48,8 @@ export REPLICATE_API_TOKEN=r8_your_token_here
 ### External Jobs API
 
 ```java
-// Create an External Job — the trigger method runs, then the job
-// enters PROCESSED state and waits for an external signal
+// Create an External Job. The trigger method runs, then the job
+// enters PROCESSED state and waits for an external signal.
 BackgroundJob.create(anExternalJob()
     .withName("AI Content Review: " + productName)
     .withLabels("ai-review", productName)
@@ -64,18 +64,18 @@ BackgroundJob.signalExternalJobFailed(jobId, "Declined by reviewer");
 ### GPU Video Generation (`/gpu`)
 
 1. User submits a text prompt
-2. JobRunr creates an External Job → trigger calls the Replicate API
+2. JobRunr creates an External Job whose trigger calls the Replicate API
 3. Job enters **PROCESSED** state (no worker threads blocked)
 4. A recurring poller checks Replicate every 5 seconds
-5. On completion, the poller signals the External Job → **SUCCEEDED**
+5. On completion, the poller signals the External Job as **SUCCEEDED**
 
 ### AI Content Approval (`/approvals`)
 
 1. User clicks "Generate AI Content"
-2. JobRunr creates an External Job → trigger generates marketing copy and stores content, confidence score, and recommendation as **job metadata** via `JobContext.saveMetadata()`
+2. JobRunr creates an External Job whose trigger generates marketing copy and stores content, confidence score, and recommendation as **job metadata** via `JobContext.saveMetadata()`
 3. Job enters **PROCESSED** state, waiting for a human decision
-4. The approval dashboard queries JobRunr's `StorageProvider` for PROCESSED jobs with the `ai-review` label — no separate database table needed
-5. Human clicks Approve or Decline → signals the External Job → **SUCCEEDED** or **FAILED**
+4. The approval dashboard queries JobRunr's `StorageProvider` for PROCESSED jobs with the `ai-review` label. No separate database table needed
+5. Human clicks Approve or Decline, which signals the External Job as **SUCCEEDED** or **FAILED**
 
 ### StorageProvider as the Source of Truth
 
@@ -89,7 +89,7 @@ List<Job> pendingJobs = storageProvider.getJobList(
     request, Paging.AmountBasedList.descOnUpdatedAt(50));
 ```
 
-This means the approval UI is powered entirely by JobRunr — showcasing how `StorageProvider`, `JobSearchRequest`, labels, and job metadata work together.
+This means the approval UI is powered entirely by JobRunr, showcasing how `StorageProvider`, `JobSearchRequest`, labels, and job metadata work together.
 
 ## Project Structure
 
@@ -108,15 +108,15 @@ src/main/java/org/jobrunr/demo/
 
 ## Limitations
 
-This is a demo application — the following trade-offs are intentional:
+This is a demo application. The following trade-offs are intentional:
 
 - **In-memory tracking for GPU jobs.** Active GPU predictions are tracked in a `ConcurrentHashMap`. If the app restarts mid-prediction, the in-memory state is lost (the job stays PROCESSED in JobRunr but is never signaled). In production, you'd persist prediction IDs or use webhooks.
 
-- **In-memory cache for completed reviews.** JobRunr clears job metadata when a job succeeds or fails. Completed approval reviews are cached in a `CopyOnWriteArrayList` for the "Review History" section — this is lost on restart. In production, you'd persist completed review data or use a webhook callback.
+- **In-memory cache for completed reviews.** JobRunr clears job metadata when a job succeeds or fails. Completed approval reviews are cached in a `CopyOnWriteArrayList` for the "Review History" section and lost on restart. In production, you'd persist completed review data separately.
 
-- **Polling instead of webhooks for GPU.** The `GpuJobService` polls Replicate every 5 seconds via a recurring job. In production, you'd use Replicate's webhook support (or JobRunr Cloud) to avoid polling entirely.
+- **Polling instead of webhooks for GPU.** The `GpuJobService` polls Replicate every 5 seconds via a recurring job. In production, you'd use Replicate's webhook support to avoid polling entirely.
 
-- **Simulated AI content generation.** The approval flow doesn't call a real AI model — it picks random marketing copy templates and generates a random confidence score.
+- **Simulated AI content generation.** The approval flow doesn't call a real AI model. It picks random marketing copy templates and generates a random confidence score.
 
 - **No authentication.** The approval UI has no access control. Anyone with access can approve or decline content.
 
