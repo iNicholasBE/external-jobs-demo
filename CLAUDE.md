@@ -32,8 +32,8 @@ BackgroundJob.signalExternalJobFailed(jobId, "reason");
 
 ## Architecture notes
 - GPU jobs use an in-memory `ConcurrentHashMap` to track active predictions. This means active jobs are lost on restart (completed jobs in Replicate are not re-linked). This is fine for a demo.
-- The `@Scheduled(fixedDelay = 2000)` poller in `GpuJobService` checks Replicate every 2s. In production, you'd use webhooks (which is the motivation for JobRunr Cloud).
-- Approval requests are persisted in PostgreSQL via Spring Data JDBC. The External Job stays in PROCESSED state until a human clicks approve/decline.
+- The poller in `GpuJobService` checks Replicate every 5s via a recurring job. In production, you'd use webhooks (which is the motivation for JobRunr Cloud).
+- The approval flow uses **JobRunr as the sole source of truth** — no separate database table. AI-generated content is stored as job metadata via `JobContext.saveMetadata()`, and the dashboard queries `StorageProvider` for PROCESSED jobs with the `ai-review` label. Completed reviews are cached in-memory (lost on restart).
 
 ---
 

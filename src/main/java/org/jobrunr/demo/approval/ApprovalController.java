@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.util.UUID;
+
 @Controller
 @RequestMapping("/approvals")
 public class ApprovalController {
@@ -21,9 +23,9 @@ public class ApprovalController {
 
     @GetMapping
     public String approvalsPage(Model model) {
-        model.addAttribute("analyzingRequests", approvalService.getAnalyzingRequests());
-        model.addAttribute("pendingRequests", approvalService.getPendingRequests());
-        model.addAttribute("completedRequests", approvalService.getCompletedRequests());
+        model.addAttribute("analyzingReviews", approvalService.getAnalyzingReviews());
+        model.addAttribute("pendingReviews", approvalService.getPendingReviews());
+        model.addAttribute("completedReviews", approvalService.getCompletedReviews());
         return "approvals";
     }
 
@@ -38,14 +40,14 @@ public class ApprovalController {
     }
 
     @PostMapping("/{id}/approve")
-    public String approve(@PathVariable Long id, RedirectAttributes attrs) {
+    public String approve(@PathVariable UUID id, RedirectAttributes attrs) {
         approvalService.approve(id);
         attrs.addFlashAttribute("success", "Content approved and published!");
         return "redirect:/approvals";
     }
 
     @PostMapping("/{id}/decline")
-    public String decline(@PathVariable Long id, RedirectAttributes attrs) {
+    public String decline(@PathVariable UUID id, RedirectAttributes attrs) {
         approvalService.decline(id);
         attrs.addFlashAttribute("error", "Content declined.");
         return "redirect:/approvals";

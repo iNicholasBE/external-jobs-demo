@@ -84,9 +84,9 @@
     </form>
 
     <!-- Analyzing -->
-    <div th:if="${!analyzingRequests.isEmpty()}">
+    <div th:if="${!analyzingReviews.isEmpty()}">
         <h2 class="section-title">AI is analyzing...</h2>
-        <div th:each="req : ${analyzingRequests}" class="approval-card analyzing-card">
+        <div th:each="req : ${analyzingReviews}" class="approval-card analyzing-card">
             <div class="card-header">
                 <h3><span class="spinner-sm"></span> <span th:text="${req.productName}"></span></h3>
                 <span class="badge badge-analyzing">Analyzing</span>
@@ -98,14 +98,14 @@
     </div>
 
     <!-- Pending Review -->
-    <div th:if="${!pendingRequests.isEmpty()}">
+    <div th:if="${!pendingReviews.isEmpty()}">
         <h2 class="section-title">Pending Human Review</h2>
-        <div th:each="req : ${pendingRequests}" class="approval-card">
+        <div th:each="req : ${pendingReviews}" class="approval-card">
             <div class="card-header">
                 <h3 th:text="${req.productName}"></h3>
                 <span class="badge"
-                      th:classappend="${req.aiRecommendation == 'PUBLISH'} ? 'badge-publish' : 'badge-review'"
-                      th:text="${req.aiRecommendation}"></span>
+                      th:classappend="${req.recommendation == 'PUBLISH'} ? 'badge-publish' : 'badge-review'"
+                      th:text="${req.recommendation}"></span>
             </div>
 
             <div class="ai-content" th:text="${req.content}"></div>
@@ -121,25 +121,25 @@
             </div>
 
             <div class="card-actions">
-                <form th:action="@{/approvals/{id}/decline(id=${req.id})}" method="post" style="display:inline">
+                <form th:action="@{/approvals/{id}/decline(id=${req.jobId})}" method="post" style="display:inline">
                     <button type="submit" class="btn btn-decline">Decline</button>
                 </form>
-                <form th:action="@{/approvals/{id}/approve(id=${req.id})}" method="post" style="display:inline">
+                <form th:action="@{/approvals/{id}/approve(id=${req.jobId})}" method="post" style="display:inline">
                     <button type="submit" class="btn btn-approve">Approve &amp; Publish</button>
                 </form>
             </div>
         </div>
     </div>
 
-    <div th:if="${analyzingRequests.isEmpty() && pendingRequests.isEmpty()}" class="empty-state">
+    <div th:if="${analyzingReviews.isEmpty() && pendingReviews.isEmpty()}" class="empty-state">
         No pending reviews. Click "Generate AI Content" to create one.
     </div>
 
     <!-- Completed -->
-    <div th:if="${!completedRequests.isEmpty()}">
+    <div th:if="${!completedReviews.isEmpty()}">
         <hr class="divider"/>
         <h2 class="section-title">Review History</h2>
-        <div th:each="req : ${completedRequests}" class="approval-card completed-card">
+        <div th:each="req : ${completedReviews}" class="approval-card completed-card">
             <div class="card-header">
                 <h3 th:text="${req.productName}"></h3>
                 <span class="badge"
