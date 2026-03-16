@@ -1,9 +1,10 @@
 package org.jobrunr.demo.gpu;
 
 import java.time.Instant;
+import java.util.UUID;
 
 public record GpuJob(
-        String jobKey,
+        UUID jobKey,
         String prompt,
         String predictionId,
         String status,

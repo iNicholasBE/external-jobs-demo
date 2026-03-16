@@ -81,7 +81,7 @@ public class AiApprovalService {
         String recommendation = confidence > 0.85 ? "PUBLISH" : "NEEDS_REVIEW";
 
         jobContext.saveMetadata("content", content);
-        jobContext.saveMetadata("aiConfidence", String.valueOf(confidence));
+        jobContext.saveMetadata("aiConfidence", confidence);
         jobContext.saveMetadata("aiRecommendation", recommendation);
     }
 
@@ -111,7 +111,7 @@ public class AiApprovalService {
                 .stream()
                 .map(job -> {
                     String content = (String) job.getMetadata().get("content");
-                    double conf = Double.parseDouble((String) job.getMetadata().get("aiConfidence"));
+                    double conf = (double) job.getMetadata().get("aiConfidence");
                     String rec = (String) job.getMetadata().get("aiRecommendation");
                     return new ReviewItem(job.getId(), extractProductName(job), content, (int) (conf * 100), rec, "PENDING_REVIEW");
                 })
@@ -124,7 +124,7 @@ public class AiApprovalService {
 
     private void cacheCompleted(Job job, String status) {
         String content = (String) job.getMetadata().get("content");
-        double confidence = Double.parseDouble((String) job.getMetadata().get("aiConfidence"));
+        double confidence = (double) job.getMetadata().get("aiConfidence");
         String recommendation = (String) job.getMetadata().get("aiRecommendation");
         completedReviews.addFirst(new ReviewItem(
                 job.getId(), extractProductName(job), content, (int) (confidence * 100), recommendation, status));

@@ -19,12 +19,21 @@ App: http://localhost:8080 | Dashboard: http://localhost:8080/dashboard
 
 ## Key External Jobs API
 ```java
-// Create an External Job
-BackgroundJob.create(anExternalJob()
-    .withName("AI Content Review: " + productName)
-    .withLabels("ai-review", productName)
+// Create an External Job (JobRunr assigns the ID)
+var jobId = BackgroundJob.create(anExternalJob()
+    .withName("GPU Video: " + prompt)
+    .withLabels("gpu", "replicate")
     .withQueue("high-prio")
-    .withDetails(() -> analyzeContent(productName, JobContext.Null)));
+    .withDetails(() -> triggerPrediction(prompt)));
+
+// Inside a trigger method, get the job context from the current thread
+var jobContext = ThreadLocalJobContext.getJobContext();
+UUID jobKey = jobContext.getJobId();
+
+// Or receive JobContext as a parameter (auto-injected by JobRunr)
+public void analyzeContent(String productName, JobContext jobContext) {
+    jobContext.saveMetadata("content", generatedContent);
+}
 
 // Signal completion from outside
 BackgroundJob.signalExternalJobSucceeded(jobId, "message");
@@ -32,7 +41,8 @@ BackgroundJob.signalExternalJobFailed(jobId, "reason");
 ```
 
 ## Architecture notes
-- GPU jobs use an in-memory `ConcurrentHashMap` to track active predictions. This means active jobs are lost on restart (completed jobs in Replicate are not re-linked). This is fine for a demo.
+- Neither scenario generates its own job key. `BackgroundJob.create()` returns the assigned `JobId`, and trigger methods access their job ID via `ThreadLocalJobContext` (GPU) or the `JobContext` parameter (approval).
+- GPU jobs use an in-memory `ConcurrentHashMap<UUID, GpuJob>` to track active predictions. This means active jobs are lost on restart (completed jobs in Replicate are not re-linked). This is fine for a demo.
 - The poller in `GpuJobService` checks Replicate every 5s via a recurring job. In production, you'd use webhooks to avoid polling.
 - The approval flow uses **JobRunr as the sole source of truth**, with no separate database table. AI-generated content is stored as job metadata via `JobContext.saveMetadata()`, and the dashboard queries `StorageProvider` for PROCESSED jobs with the `ai-review` label. Completed reviews are cached in-memory (lost on restart).
 

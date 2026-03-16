@@ -50,24 +50,31 @@ export REPLICATE_API_TOKEN=r8_your_token_here
 ```java
 // Create an External Job. The trigger method runs, then the job
 // enters PROCESSED state and waits for an external signal.
-BackgroundJob.create(anExternalJob()
-    .withName("AI Content Review: " + productName)
-    .withLabels("ai-review", productName)
+var jobId = BackgroundJob.create(anExternalJob()
+    .withName("GPU Video: " + prompt)
+    .withLabels("gpu", "replicate")
     .withQueue("high-prio")
-    .withDetails(() -> analyzeContent(productName, JobContext.Null)));
+    .withDetails(() -> triggerPrediction(prompt)));
+
+// Inside the trigger, get the job context from the current thread
+var jobContext = ThreadLocalJobContext.getJobContext();
+UUID jobKey = jobContext.getJobId();
 
 // Signal completion from outside
-BackgroundJob.signalExternalJobSucceeded(jobId, "Approved by reviewer");
-BackgroundJob.signalExternalJobFailed(jobId, "Declined by reviewer");
+BackgroundJob.signalExternalJobSucceeded(jobId, "Video generated");
+BackgroundJob.signalExternalJobFailed(jobId, "Prediction failed");
 ```
+
+Neither scenario manually generates a job key. `BackgroundJob.create()` returns the assigned `JobId`, and trigger methods access the job context via `ThreadLocalJobContext` or the `JobContext` parameter.
 
 ### GPU Video Generation (`/gpu`)
 
 1. User submits a text prompt
 2. JobRunr creates an External Job whose trigger calls the Replicate API
-3. Job enters **PROCESSED** state (no worker threads blocked)
-4. A recurring poller checks Replicate every 5 seconds
-5. On completion, the poller signals the External Job as **SUCCEEDED**
+3. The trigger retrieves its own job ID via `ThreadLocalJobContext` to track the prediction
+4. Job enters **PROCESSED** state (no worker threads blocked)
+5. A recurring poller checks Replicate every 5 seconds
+6. On completion, the poller signals the External Job as **SUCCEEDED**
 
 ### AI Content Approval (`/approvals`)
 
