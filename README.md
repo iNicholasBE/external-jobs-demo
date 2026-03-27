@@ -1,5 +1,7 @@
 # JobRunr Pro: External Jobs Demo
 
+> **Watch the video:** [External Jobs in JobRunr Pro](https://youtu.be/lDc66lktbfs) on YouTube — this repository contains the code shown in the video.
+
 A Spring Boot demo showcasing **[External Jobs](https://www.jobrunr.io/en/documentation/pro/external-jobs/)** in JobRunr Pro 8.5. External Jobs are jobs that are triggered by JobRunr but completed by an external system or a human decision.
 
 > **Learn more:** [External Jobs Guide](https://www.jobrunr.io/en/guides/advanced/external-jobs/), a step-by-step walkthrough of the External Jobs API.

@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.jobrunr.scheduling.JobBuilder.aJob;
 import static org.jobrunr.scheduling.JobBuilder.anExternalJob;
 import static org.jobrunr.storage.JobSearchRequestBuilder.aJobSearchRequest;
 
@@ -65,12 +66,30 @@ public class AiApprovalService {
     }
 
     public void createReviewRequest(String productName) {
-        BackgroundJob.create(anExternalJob()
+        var jobId = BackgroundJob.create(anExternalJob()
                 .withName("AI Content Review: " + productName)
                 .withLabels("ai-review", productName)
                 .withQueue("high-prio")
                 .withAmountOfRetries(0)
                 .withDetails(() -> analyzeContent(productName, JobContext.Null)));
+
+        // Added a chained job as example of how job chains and external jobs can be combined 
+        // This job will only run after the review is approved
+        BackgroundJob.create(aJob()
+                .runAfterSuccessOf(jobId)
+                .withDetails(() -> waitForReviewCompletion()));
+                
+    }
+
+    public void waitForReviewCompletion() {
+        System.out.println("Waiting some time");
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        System.out.println("Waiting done");
     }
 
     /** Called by JobRunr — simulates AI generating marketing copy and a confidence score. */
@@ -79,7 +98,7 @@ public class AiApprovalService {
         String content = TEMPLATES.get(rng.nextInt(TEMPLATES.size())).formatted(productName);
         double confidence = Math.round((0.65 + rng.nextDouble() * 0.30) * 100.0) / 100.0;
         String recommendation = confidence > 0.85 ? "PUBLISH" : "NEEDS_REVIEW";
-
+        
         jobContext.saveMetadata("content", content);
         jobContext.saveMetadata("aiConfidence", confidence);
         jobContext.saveMetadata("aiRecommendation", recommendation);
