@@ -12,8 +12,10 @@ A Spring Boot demo showcasing **[External Jobs](https://www.jobrunr.io/en/docume
 |---|---|
 | **GPU Video Generation** | A text prompt is sent to [Replicate](https://replicate.com) which runs `lightricks/ltx-2.3-fast` on a real GPU. JobRunr tracks the long-running prediction as an External Job. A poller detects completion and signals the job. |
 | **AI Content Approval** | AI generates marketing copy with a confidence score. The job enters PROCESSED state and waits for a human to approve or decline. The decision signals the External Job as succeeded or failed. |
+| **Gemini Async (Webhooks)** | A prompt is sent to Google Gemini's async batch API. The External Job parks in PROCESSED. When Gemini is done, it POSTs a signed [Standard Webhook](https://www.standardwebhooks.com) back to the app, which verifies the signature and signals the job — no polling. |
+| **Gemini Veo (Webhooks)** | A prompt is sent to Veo via `:predictLongRunning`. The External Job parks in PROCESSED. When the video is ready, Google fires a `video.generated` webhook; the app fetches the MP4 and signals the job. Same External Jobs API as the GPU/Replicate demo, but **push** instead of poll. |
 
-Both scenarios use **priority queues**. GPU and approval jobs are enqueued on the `high-prio` queue.
+All scenarios use **priority queues** — they enqueue on `high-prio`.
 
 ## Tech Stack
 
@@ -21,12 +23,15 @@ Both scenarios use **priority queues**. GPU and approval jobs are enqueued on th
 - JobRunr Pro 8.5.0
 - PostgreSQL 17 (via Docker Compose)
 - Replicate API for real GPU inference
+- Google Gemini API for async batch generation with webhooks
 
 ## Prerequisites
 
 - Java 21+
 - Docker (for PostgreSQL)
 - A [Replicate](https://replicate.com) API token (for the GPU scenario)
+- A [Google AI Studio](https://aistudio.google.com/apikey) API key (for the Gemini scenario)
+- An `ngrok` tunnel or similar (for the Gemini webhook to reach your laptop)
 - JobRunr Pro Maven credentials (`mavenUser` / `mavenPass` in `gradle.properties`)
 
 ## Running
@@ -35,15 +40,44 @@ Both scenarios use **priority queues**. GPU and approval jobs are enqueued on th
 # 1. Start PostgreSQL
 docker compose up -d
 
-# 2. Set your Replicate token
-export REPLICATE_API_TOKEN=r8_your_token_here
+# 2. Copy .env.example to .env and fill in your values
+cp .env.example .env
+```
 
-# 3. Run the app
+### Setting up ngrok (required for the Gemini scenarios)
+
+Gemini's webhooks need a publicly reachable HTTPS URL to POST to. Locally we use [ngrok](https://ngrok.com) to expose port 8080.
+
+```bash
+# Install (one-time)
+brew install ngrok        # or download from https://ngrok.com/download
+ngrok config add-authtoken <YOUR_AUTHTOKEN>   # one-time, from https://dashboard.ngrok.com/get-started/your-authtoken
+
+# Start the tunnel — leave this running in its own terminal
+ngrok http 8080
+```
+
+ngrok prints a forwarding URL like `https://something-something.ngrok-free.app`. Copy that into `.env`:
+
+```ini
+GEMINI_API_KEY=...your-key...
+GEMINI_PUBLIC_URL=https://something-something.ngrok-free.app
+```
+
+If you have a paid plan (or a reserved free dev domain), you can pin a stable URL with `ngrok http --url=<your-domain> 8080` so you don't have to re-edit `.env` every restart.
+
+> **Heads up: port must be 8080.** The Spring Boot app listens on 8080, so `ngrok http 80` will not reach it.
+
+### Boot the app
+
+```bash
 ./gradlew bootRun
 ```
 
 - App: http://localhost:8080
 - JobRunr Dashboard: http://localhost:8080/dashboard
+
+On startup the app calls `POST https://generativelanguage.googleapis.com/v1beta/webhooks` once to register a webhook for the `batch.*` and `video.generated` events, then writes the signing secret to `.gemini-webhook.json` (gitignored). Subsequent restarts reuse it. If `GEMINI_PUBLIC_URL` changes (or the subscribed events change), the app deletes the old webhook and registers a fresh one automatically.
 
 ## How It Works
 
@@ -100,6 +134,34 @@ List<Job> pendingJobs = storageProvider.getJobList(
 
 This means the approval UI is powered entirely by JobRunr, showcasing how `StorageProvider`, `JobSearchRequest`, labels, and job metadata work together.
 
+### Gemini Async with Webhooks (`/gemini`)
+
+1. On startup, `GeminiWebhookSetup` registers a static webhook with Gemini. The signing secret is persisted to `.gemini-webhook.json` (gitignored)
+2. User submits a prompt
+3. JobRunr creates an External Job whose trigger uploads a JSONL file via the Files API and creates a batch job
+4. Job enters **PROCESSED** state — we're not polling, we're just waiting
+5. Google Gemini finishes the batch and POSTs a signed webhook to `<GEMINI_PUBLIC_URL>/gemini/webhook`
+6. `GeminiWebhookController` verifies the HMAC-SHA256 signature (per the [Standard Webhooks](https://www.standardwebhooks.com) spec), downloads the output JSONL, and signals the External Job as **SUCCEEDED**
+
+```java
+// Trigger: kick off async work, External Job parks afterwards
+public void triggerBatch(String prompt) {
+    UUID jobKey = ThreadLocalJobContext.getJobContext().getJobId();
+    GeminiClient.GeminiFile uploaded = client.uploadFile(jsonl, "application/jsonl", "...");
+    GeminiClient.BatchOp op = client.createBatchFromFile(model, uploaded.name(), "...");
+    batchToJob.put(op.name(), jobKey);
+}
+
+// Webhook: verify, then signal
+public ResponseEntity<String> receive(String webhookId, String timestamp, String signature, String body) {
+    setup.verifier().verify(webhookId, timestamp, signature, body);
+    String batchId = event.path("data").path("id").asText();
+    String outputUri = event.path("data").path("output_file_uri").asText();
+    batchService.onBatchSucceeded(batchId, outputUri);
+    return ResponseEntity.ok("{\"status\":\"received\"}");
+}
+```
+
 ## Project Structure
 
 ```
@@ -108,10 +170,20 @@ src/main/java/org/jobrunr/demo/
 ├── approval/
 │   ├── AiApprovalService.java         # Human-in-the-loop flow (StorageProvider + metadata)
 │   └── ApprovalController.java        # Web endpoints for /approvals
+├── gemini/
+│   ├── GeminiBatchService.java        # External Job trigger + batch create
+│   ├── GeminiClient.java              # Webhooks/Files/Batch HTTP client
+│   ├── GeminiConfig.java              # @Value-driven config
+│   ├── GeminiJob.java                 # Record for UI display
+│   ├── GeminiPageController.java      # /gemini UI
+│   ├── GeminiWebhookController.java   # /gemini/webhook receiver
+│   ├── GeminiWebhookSetup.java        # Auto-register webhook on startup
+│   ├── WebhookSecretStore.java        # Persists signing secret to local file
+│   └── WebhookSignatureVerifier.java  # HMAC-SHA256 (Standard Webhooks)
 └── gpu/
     ├── GpuJob.java                    # Record for GPU job state
     ├── GpuJobService.java             # GPU flow (Replicate + poller)
-    ├── GpuController.java             # Web endpoints for /gpu
+    ├── GpuJobController.java          # Web endpoints for /gpu
     └── ReplicateService.java          # Replicate API client
 ```
 

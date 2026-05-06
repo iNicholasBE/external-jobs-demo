@@ -8,14 +8,23 @@ A Spring Boot demo app showcasing **JobRunr Pro 8.5 External Jobs**. These are j
 - JobRunr Pro 8.5.0 (private Maven repo, credentials in `gradle.properties`)
 - PostgreSQL 17 (via `docker-compose.yml`)
 - Replicate API for real GPU inference (model: `lightricks/ltx-2.3-fast`)
+- Google Gemini API for async batch generation with webhooks
+- `spring-dotenv` loads `.env` (gitignored) for `REPLICATE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_PUBLIC_URL`
 
 ## Running
 ```bash
 docker compose up -d
-export REPLICATE_API_TOKEN=r8_your_token
+# Either export env vars or put them in .env (gitignored)
 ./gradlew bootRun
 ```
 App: http://localhost:8080 | Dashboard: http://localhost:8080/dashboard
+
+For the Gemini scenario, expose the app first:
+```bash
+ngrok http 8080
+# copy the https URL into GEMINI_PUBLIC_URL in .env
+```
+On startup, the app calls `POST /v1/webhooks` once and persists the signing secret to `.gemini-webhook.json` (gitignored). Subsequent boots reuse it.
 
 ## Key External Jobs API
 ```java
@@ -41,10 +50,11 @@ BackgroundJob.signalExternalJobFailed(jobId, "reason");
 ```
 
 ## Architecture notes
-- Neither scenario generates its own job key. `BackgroundJob.create()` returns the assigned `JobId`, and trigger methods access their job ID via `ThreadLocalJobContext` (GPU) or the `JobContext` parameter (approval).
+- No scenario generates its own job key. `BackgroundJob.create()` returns the assigned `JobId`, and trigger methods access their job ID via `ThreadLocalJobContext` (GPU/Gemini) or the `JobContext` parameter (approval).
 - GPU jobs use an in-memory `ConcurrentHashMap<UUID, GpuJob>` to track active predictions. This means active jobs are lost on restart (completed jobs in Replicate are not re-linked). This is fine for a demo.
 - The poller in `GpuJobService` checks Replicate every 5s via a recurring job. In production, you'd use webhooks to avoid polling.
 - The approval flow uses **JobRunr as the sole source of truth**, with no separate database table. AI-generated content is stored as job metadata via `JobContext.saveMetadata()`, and the dashboard queries `StorageProvider` for PROCESSED jobs with the `ai-review` label. Completed reviews are cached in-memory (lost on restart).
+- The Gemini flow contrasts with the GPU flow: **Google pushes a webhook**, we don't poll. `GeminiWebhookSetup` registers a static webhook on startup, `GeminiBatchService` uploads JSONL + creates a batch, and `GeminiWebhookController` verifies the HMAC-SHA256 signature (per the [Standard Webhooks](https://www.standardwebhooks.com) spec) before signaling the External Job.
 
 ---
 
@@ -92,6 +102,30 @@ BackgroundJob.signalExternalJobFailed(jobId, "reason");
 - **No timeout pressure.** Unlike a regular job, there's no worker thread waiting
 - **Audit trail.** JobRunr tracks the full lifecycle: created > processing > processed > succeeded/failed
 - **Priority queues.** Approval jobs go to `high-prio` queue, processed before regular jobs
+
+## Scenario 3: Gemini Async with Webhooks (~2 min)
+
+### Setup
+1. Run `ngrok http 8080` and copy the https URL into `GEMINI_PUBLIC_URL` in `.env`
+2. Set `GEMINI_API_KEY` in `.env` (from https://aistudio.google.com/apikey)
+3. `./gradlew bootRun` — on startup, the app registers a webhook with Gemini and stores the signing secret in `.gemini-webhook.json` (gitignored)
+4. Open http://localhost:8080/gemini
+
+### Demo flow
+1. **Show the green banner.** "Webhook registered" with the webhook id and URL — emphasize the one-time setup
+2. **Submit a prompt**, e.g. "Write a one-sentence tagline for a developer-focused job scheduler"
+3. **Show the dashboard.** External Job is PROCESSING (we're uploading the JSONL + creating the batch)
+4. **Show the dashboard again.** Job is now PROCESSED — we're done with our worker thread, waiting for Google
+5. **Wait ~10–30s.** Google fires `batch.succeeded` webhook to our app
+6. **Show the response.** Generated text appears with the batch id
+7. **Show the dashboard.** Job moved to SUCCEEDED
+
+### Key talking points
+- **Push, not poll.** Compare to the GPU demo where we poll Replicate every 5s — here Google pushes
+- **Standard Webhooks.** HMAC-SHA256 signature verification per [standardwebhooks.com](https://www.standardwebhooks.com) — same spec used by Stripe, Vercel, Resend, etc.
+- **Stateless on our side.** We don't need to remember to check anything; the webhook is the trigger
+- **End-to-end signed.** Replay protection via the 5-minute timestamp window, signature verified before doing any work
+- **One-time registration.** `POST /v1/webhooks` once → Gemini stores it for the project → all future batches notify us
 
 ## Closing (the big picture)
 > "External Jobs let you bring any external process under JobRunr's umbrella: GPU inference, human approvals, third-party API callbacks, payment confirmations. You get the same dashboard, the same monitoring, the same retry/failure handling, but for work that happens outside your JVM."

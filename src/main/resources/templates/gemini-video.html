@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Veo (Webhooks) — External Jobs</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        .job-card {
+            display: flex; align-items: center; gap: 1rem;
+            background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+            padding: 1rem; margin-bottom: 0.75rem;
+        }
+        .job-card .info { flex: 1; }
+        .job-card .meta { color: #6b7280; font-size: 0.8rem; margin-top: 0.25rem; }
+        .spinner-blue {
+            width: 24px; height: 24px;
+            border: 3px solid #93c5fd; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        .result-card {
+            display: flex; gap: 1.25rem; align-items: flex-start;
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+            padding: 1rem; margin-bottom: 0.75rem;
+        }
+        .result-card video { width: 320px; border-radius: 8px; border: 1px solid #d1d5db; }
+        .result-info { flex: 1; }
+        .result-info strong { display: block; margin-bottom: 0.25rem; }
+        .result-meta { color: #6b7280; font-size: 0.8rem; }
+
+        .config-banner {
+            background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+            padding: 1rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1.5rem;
+        }
+        .config-banner code { background: #fef3c7; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+        .ready-banner {
+            background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+            padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1.5rem;
+        }
+        .ready-banner code { background: #d1fae5; padding: 0.1rem 0.4rem; border-radius: 4px; }
+    </style>
+    <script>
+        setTimeout(function() {
+            if (document.querySelector('.job-card')) location.reload();
+        }, 5000);
+    </script>
+</head>
+<body>
+<div class="page">
+    <nav>
+        <a href="/">Home</a>
+        <a href="/gpu">GPU Video Generation</a>
+        <a href="/approvals">AI Content Review</a>
+        <a href="/gemini">Gemini Async</a>
+        <a href="/gemini-video" class="active">Gemini Veo</a>
+        <a href="/dashboard" target="_blank">JobRunr Dashboard</a>
+    </nav>
+
+    <div class="page-header">
+        <h1>Gemini Veo with Webhooks</h1>
+        <p>Generate video on Google's GPUs. Get notified via the <code>video.generated</code> webhook when it's done — no polling.</p>
+    </div>
+
+    <div th:if="${success}" class="flash-success" th:text="${success}"></div>
+    <div th:if="${error}" class="flash-error" th:text="${error}"></div>
+
+    <div th:if="${!configured}" class="config-banner">
+        <strong>Setup needed.</strong>
+        Set <code>GEMINI_API_KEY</code> and <code>GEMINI_PUBLIC_URL</code> in <code>.env</code>, then restart.
+    </div>
+
+    <div th:if="${configured} and ${!ready}" class="config-banner">
+        <strong>Webhook registration failed.</strong>
+        <span th:if="${setupError}" th:text="${setupError}"></span>
+    </div>
+
+    <div th:if="${ready}" class="ready-banner">
+        Webhook registered. <code th:text="${webhookId}"></code> &rarr; <code th:text="${webhookUrl}"></code>
+        &middot; model <code th:text="${videoModel}"></code>
+    </div>
+
+    <div class="how-it-works">
+        <h3>Push, not poll</h3>
+        <ol>
+            <li>You submit a prompt &mdash; JobRunr creates an <strong>External Job</strong></li>
+            <li>The trigger calls Veo's <code>:predictLongRunning</code> and stores the operation name</li>
+            <li>The External Job parks in <strong>PROCESSED</strong></li>
+            <li>When the video is ready, Google POSTs <code>video.generated</code> to this app</li>
+            <li>We verify the signature, fetch the MP4, and signal the External Job</li>
+        </ol>
+        <p style="margin-top:0.5rem;color:#6b7280">Compare to <a href="/gpu">/gpu</a>, which polls Replicate every 5 seconds — same External Jobs API, opposite direction of integration.</p>
+    </div>
+
+    <form th:action="@{/gemini-video/launch}" method="post" class="form-row">
+        <input type="text" name="prompt"
+               placeholder="e.g. A cat astronaut floating through a colorful nebula"
+               required />
+        <button type="submit" class="btn btn-primary" th:disabled="${!ready}">Generate Video</button>
+    </form>
+
+    <div th:if="${!activeJobs.isEmpty()}">
+        <h2 class="section-title">Active External Jobs (waiting for webhook)</h2>
+        <div th:each="job : ${activeJobs}" class="job-card">
+            <div class="spinner-blue"></div>
+            <div class="info">
+                <strong th:text="${job.prompt()}"></strong>
+                <div class="meta">
+                    <span class="badge badge-processing" th:text="${job.status()}"></span>
+                    <span th:if="${job.operationName() != null}" th:text="' — Operation: ' + ${job.operationName()}"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="divider"/>
+
+    <h2 class="section-title">Completed</h2>
+    <div th:if="${completedJobs.isEmpty()}" class="empty-state">
+        Nothing yet. Submit a prompt above to generate a video on Google's GPUs.
+    </div>
+    <div th:each="job : ${completedJobs}" class="result-card">
+        <video th:if="${job.videoUrl() != null}" th:src="${job.videoUrl()}" controls autoplay muted loop></video>
+        <div class="result-info">
+            <strong th:text="${job.prompt()}"></strong>
+            <div th:if="${job.error() != null}" style="color:#991b1b;font-size:0.9rem" th:text="${'Error: ' + job.error()}"></div>
+            <div class="result-meta" th:if="${job.operationName() != null}" th:text="'Operation: ' + ${job.operationName()}"></div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

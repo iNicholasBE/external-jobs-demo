@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Async — External Jobs</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        .job-card {
+            display: flex; align-items: center; gap: 1rem;
+            background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+            padding: 1rem; margin-bottom: 0.75rem;
+        }
+        .job-card .info { flex: 1; }
+        .job-card .info strong { color: #1f2937; }
+        .job-card .meta { color: #6b7280; font-size: 0.8rem; margin-top: 0.25rem; }
+        .spinner-blue {
+            width: 24px; height: 24px;
+            border: 3px solid #93c5fd; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+
+        .result-card {
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+            padding: 1rem; margin-bottom: 0.75rem;
+        }
+        .result-card .prompt { color: #1f2937; font-weight: 600; margin-bottom: 0.5rem; }
+        .result-card .response { color: #1f2937; line-height: 1.5; white-space: pre-wrap; font-size: 0.9rem; }
+        .result-meta { color: #6b7280; font-size: 0.8rem; margin-top: 0.5rem; }
+
+        .config-banner {
+            background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+            padding: 1rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1.5rem;
+        }
+        .config-banner code {
+            background: #fef3c7; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em;
+        }
+        .ready-banner {
+            background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+            padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1.5rem;
+        }
+        .ready-banner code { background: #d1fae5; padding: 0.1rem 0.4rem; border-radius: 4px; }
+    </style>
+    <script>
+        setTimeout(function() {
+            if (document.querySelector('.job-card')) location.reload();
+        }, 3000);
+    </script>
+</head>
+<body>
+<div class="page">
+    <nav>
+        <a href="/">Home</a>
+        <a href="/gpu">GPU Video Generation</a>
+        <a href="/approvals">AI Content Review</a>
+        <a href="/gemini" class="active">Gemini Async</a>
+        <a href="/gemini-video">Gemini Veo</a>
+        <a href="/dashboard" target="_blank">JobRunr Dashboard</a>
+    </nav>
+
+    <div class="page-header">
+        <h1>Gemini Async with Webhooks</h1>
+        <p>Submit a prompt to Google Gemini's async batch API, get pushed a webhook when it's done</p>
+    </div>
+
+    <div th:if="${success}" class="flash-success" th:text="${success}"></div>
+    <div th:if="${error}" class="flash-error" th:text="${error}"></div>
+
+    <div th:if="${!configured}" class="config-banner">
+        <strong>Setup needed.</strong>
+        Set <code>GEMINI_API_KEY</code> (from <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com</a>)
+        and <code>GEMINI_PUBLIC_URL</code> (e.g. an <code>ngrok</code> tunnel pointing at port 8080) in your <code>.env</code> file, then restart.
+    </div>
+
+    <div th:if="${configured} and ${!ready}" class="config-banner">
+        <strong>Webhook registration failed.</strong>
+        <span th:if="${setupError}" th:text="${setupError}"></span>
+    </div>
+
+    <div th:if="${ready}" class="ready-banner">
+        Webhook registered. <code th:text="${webhookId}"></code> &rarr; <code th:text="${webhookUrl}"></code>
+        &middot; model <code th:text="${model}"></code>
+    </div>
+
+    <div class="how-it-works">
+        <h3>How it works (External Jobs + Webhooks)</h3>
+        <ol>
+            <li>You submit a prompt &mdash; JobRunr creates an <strong>External Job</strong></li>
+            <li>The trigger uploads a one-line JSONL file and creates a <strong>Gemini batch job</strong></li>
+            <li>The External Job enters <strong>PROCESSED</strong> state &mdash; <em>no polling, no worker thread</em></li>
+            <li>Google POSTs a signed webhook (<code>batch.succeeded</code>) to this app when ready</li>
+            <li>We verify the HMAC signature, download the output file, and <strong>signal</strong> the job</li>
+        </ol>
+    </div>
+
+    <form th:action="@{/gemini/launch}" method="post" class="form-row">
+        <input type="text" name="prompt"
+               placeholder="e.g. Write a single-sentence tagline for a developer-focused job scheduler"
+               required />
+        <button type="submit" class="btn btn-primary" th:disabled="${!ready}">Submit to Gemini</button>
+    </form>
+
+    <!-- Active jobs -->
+    <div th:if="${!activeJobs.isEmpty()}">
+        <h2 class="section-title">Active External Jobs (waiting for webhook)</h2>
+        <div th:each="job : ${activeJobs}" class="job-card">
+            <div class="spinner-blue"></div>
+            <div class="info">
+                <strong th:text="${job.prompt()}"></strong>
+                <div class="meta">
+                    <span class="badge badge-processing" th:text="${job.status()}"></span>
+                    <span th:if="${job.batchName() != null}" th:text="' — Batch: ' + ${job.batchName()}"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="divider"/>
+
+    <h2 class="section-title">Completed</h2>
+    <div th:if="${completedJobs.isEmpty()}" class="empty-state">
+        Nothing yet. Submit a prompt above to send an async request to Gemini.
+    </div>
+    <div th:each="job : ${completedJobs}" class="result-card">
+        <div class="prompt" th:text="${job.prompt()}"></div>
+        <div th:if="${job.result() != null}" class="response" th:text="${job.result()}"></div>
+        <div th:if="${job.error() != null}" class="response" style="color:#991b1b" th:text="${'Error: ' + job.error()}"></div>
+        <div class="result-meta" th:if="${job.batchName() != null}" th:text="'Batch: ' + ${job.batchName()}"></div>
+    </div>
+</div>
+</body>
+</html>
